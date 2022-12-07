@@ -1,0 +1,8 @@
+# core
+aiohttp==3.8.3
+
+# code reformatting & checking
+black==22.10.0
+flake8==6.0.0
+pre-commit==2.20.0
+pyupgrade==3.3.1
