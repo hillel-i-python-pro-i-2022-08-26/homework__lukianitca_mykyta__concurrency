@@ -1,5 +1,6 @@
 # core
 aiohttp==3.8.3
+beautifulsoup4 == 4.11.1
 
 # code reformatting & checking
 black==22.10.0

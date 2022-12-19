@@ -1,0 +1,152 @@
+import asyncio
+from asyncio.exceptions import TimeoutError
+
+import logging
+
+import aiohttp
+from aiohttp.client_exceptions import InvalidURL, ClientConnectorError, ServerDisconnectedError
+from bs4 import BeautifulSoup
+from urllib import parse
+
+
+class MapQueue:
+    def __init__(self):
+        self.queue = asyncio.Queue()
+        self._elems = set()
+
+    async def add_unique(self, new_elem):
+        if new_elem.url not in self._elems:
+            await self.queue.put(new_elem)
+            self._elems.add(new_elem.url)
+
+    async def add_to_set(self, links):
+        self._elems.update(links)
+
+    async def get_all_tasks(self):
+        return [await self.queue.get() for _ in range(self.queue.qsize())]
+
+    def write_links(self):
+        with open("txt_links/parsed_links.txt", mode="w+") as file:
+            file.write("\n".join([link for link in self._elems if link]))
+
+
+class Config:
+    def __init__(self, max_depth: int | None = None):
+        self.max_depth = max_depth
+
+
+def init_logger():
+    logger = logging.getLogger()
+    logging.basicConfig(level=logging.INFO)
+    return logger
+
+
+class TaskRequest:
+    def __init__(self, url, session, tasks_queue, logger, current_depth=0, base_url=None, config: Config = Config()):
+        self.url = url
+        self.session = session
+        self.tasks_queue = tasks_queue
+        self.base_url = self.set_base_link(base_url)
+        self.current_depth = current_depth
+        self.config = config
+        self.logger = logger
+
+    def set_base_link(self, new_link):
+        if not new_link:
+            parsed_new_link = parse.urlparse(self.url)
+            return parse.urljoin(parsed_new_link.scheme, parsed_new_link.netloc)
+        return new_link
+
+    async def parse(self):
+        self.logger.info(f"[ START ] {self.url}")
+        parsed_link_text = parse.urlparse(self.url)
+        if not parsed_link_text.netloc:
+            try:
+                self.url = await self._normalize_url()
+            except ValueError as exc:
+                print(exc)
+        else:
+            self.base_url = f"{parsed_link_text.scheme}://{parsed_link_text.netloc}"
+        try:
+            new_links = await self._extract_links()
+        except (
+            InvalidURL,
+            ClientConnectorError,
+            UnicodeDecodeError,
+            AssertionError,
+            ServerDisconnectedError,
+            TimeoutError,
+        ) as exc:
+            self.logger.error(exc)
+            return
+        self.logger.info(f"Links extracted: {len(new_links)} for url: {self.url}")
+        if await self._validate_depth():
+            for link in new_links:
+                if link:
+                    await self.tasks_queue.add_unique(
+                        TaskRequest(
+                            link,
+                            self.session,
+                            self.tasks_queue,
+                            self.logger,
+                            config=self.config,
+                            current_depth=self.current_depth + 1,
+                            base_url=self.base_url,
+                        )
+                    )
+            self.logger.info(f"[ END ] Tasks added for link {self.url}")
+            return
+        print("Final stage")
+        await self.tasks_queue.add_to_set(new_links)
+
+    async def _normalize_url(self):
+        if not self.base_url:
+            raise ValueError("Can't find base link for normalizing")
+        return parse.urljoin(self.base_url, self.url)
+
+    async def _validate_depth(self):
+        if self.config.max_depth:
+            return self.current_depth != self.config.max_depth
+        return True
+
+    async def _extract_links(self):
+        html = await self._get_html_page()
+        self.logger.info(f"Extracting links for url: {self.url}")
+        soup = BeautifulSoup(html, features="html.parser")
+        return set(map(lambda anchor: anchor.get("href"), soup.findAll("a")))
+
+    async def _get_html_page(self):
+        async with self.session.get(self.url) as response:
+            self.logger.info(f"Making request for url: {self.url}")
+            return await response.text()
+
+
+async def main():
+    links = [
+        # "https://nz.ua/",
+        "https://github.com/",
+        # "https://www.tiktok.com/",
+        # "https://www.linkedin.com/",
+        # "https://rednafi.github.io/reflections/limit-concurrency-with-semaphore-in-python-asyncio.html"
+    ]
+    header = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:64.0) Gecko/20100101 Firefox/64.0",
+    }
+    conn = aiohttp.TCPConnector(limit=50, limit_per_host=8)
+    queue_obj = MapQueue()
+    config = Config(max_depth=2)
+    semaphore = asyncio.Semaphore(20)
+    logger = init_logger()
+    async with semaphore:
+        async with aiohttp.ClientSession(connector=conn, headers=header) as session:
+            await asyncio.gather(
+                *[TaskRequest(url, session, queue_obj, logger, config=config).parse() for url in links]
+            )
+            while not queue_obj.queue.empty():
+                new_tasks = await queue_obj.get_all_tasks()
+                await asyncio.gather(*[task.parse() for task in new_tasks])
+    queue_obj.write_links()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
