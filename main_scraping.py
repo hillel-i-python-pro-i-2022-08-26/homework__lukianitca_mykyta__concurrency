@@ -26,7 +26,7 @@ class MapQueue:
         return [await self.queue.get() for _ in range(self.queue.qsize())]
 
     def write_links(self):
-        with open("txt_links/parsed_links.txt", mode="w+") as file:
+        with open("links_storage/parsed_links.txt", mode="w+") as file:
             file.write("\n".join([link for link in self._elems if link]))
 
 
@@ -132,19 +132,19 @@ async def main():
     header = {
         "User-Agent": "Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:64.0) Gecko/20100101 Firefox/64.0",
     }
-    conn = aiohttp.TCPConnector(limit=50, limit_per_host=8)
+    # conn = aiohttp.TCPConnector(limit=50, limit_per_host=8)
     queue_obj = MapQueue()
     config = Config(max_depth=2)
     semaphore = asyncio.Semaphore(20)
     logger = init_logger()
-    async with semaphore:
-        async with aiohttp.ClientSession(connector=conn, headers=header) as session:
-            await asyncio.gather(
-                *[TaskRequest(url, session, queue_obj, logger, config=config).parse() for url in links]
-            )
-            while not queue_obj.queue.empty():
-                new_tasks = await queue_obj.get_all_tasks()
-                await asyncio.gather(*[task.parse() for task in new_tasks])
+    # async with semaphore:
+    async with aiohttp.ClientSession(headers=header) as session:
+        await asyncio.gather(
+            *[TaskRequest(url, session, queue_obj, logger, config=config).parse() for url in links],
+        )
+        while not queue_obj.queue.empty():
+            new_tasks = await queue_obj.get_all_tasks()
+            await asyncio.gather(*[task.parse() for task in new_tasks])
     queue_obj.write_links()
 
 
