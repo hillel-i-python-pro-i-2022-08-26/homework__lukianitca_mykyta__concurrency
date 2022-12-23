@@ -23,6 +23,7 @@ class MapQueue:
         self._elems.update(links)
 
     async def get_all_tasks(self):
+        print("STEP IN QUEUE")
         return [await self.queue.get() for _ in range(self.queue.qsize())]
 
     def write_links(self):
@@ -42,10 +43,21 @@ def init_logger():
 
 
 class TaskRequest:
-    def __init__(self, url, session, tasks_queue, logger, current_depth=0, base_url=None, config: Config = Config()):
+    def __init__(
+        self,
+        url,
+        session,
+        tasks_queue: MapQueue,
+        logger: logging.Logger,
+        semaphore: asyncio.Semaphore,
+        current_depth=0,
+        base_url=None,
+        config: Config = Config(),
+    ):
         self.url = url
         self.session = session
         self.tasks_queue = tasks_queue
+        self.semaphore = semaphore
         self.base_url = self.set_base_link(base_url)
         self.current_depth = current_depth
         self.config = config
@@ -64,7 +76,7 @@ class TaskRequest:
             try:
                 self.url = await self._normalize_url()
             except ValueError as exc:
-                print(exc)
+                self.logger.error(exc)
         else:
             self.base_url = f"{parsed_link_text.scheme}://{parsed_link_text.netloc}"
         try:
@@ -89,6 +101,7 @@ class TaskRequest:
                             self.session,
                             self.tasks_queue,
                             self.logger,
+                            self.semaphore,
                             config=self.config,
                             current_depth=self.current_depth + 1,
                             base_url=self.base_url,
@@ -100,11 +113,13 @@ class TaskRequest:
         await self.tasks_queue.add_to_set(new_links)
 
     async def _normalize_url(self):
+        self.logger.info(f"Normalizing url for {self.url}")
         if not self.base_url:
             raise ValueError("Can't find base link for normalizing")
         return parse.urljoin(self.base_url, self.url)
 
     async def _validate_depth(self):
+        self.logger.info(f"Validating depth for {self.url}")
         if self.config.max_depth:
             return self.current_depth != self.config.max_depth
         return True
@@ -112,35 +127,38 @@ class TaskRequest:
     async def _extract_links(self):
         html = await self._get_html_page()
         self.logger.info(f"Extracting links for url: {self.url}")
-        soup = BeautifulSoup(html, features="html.parser")
+        soup = BeautifulSoup(html, features="lxml")
         return set(map(lambda anchor: anchor.get("href"), soup.findAll("a")))
 
     async def _get_html_page(self):
-        async with self.session.get(self.url) as response:
-            self.logger.info(f"Making request for url: {self.url}")
-            return await response.text()
+        async with self.semaphore:
+            async with self.session.get(self.url) as response:
+                self.logger.info(f"Making request for url: {self.url}")
+                return await response.text()
 
 
 async def main():
     links = [
         # "https://nz.ua/",
         "https://github.com/",
-        # "https://www.tiktok.com/",
-        # "https://www.linkedin.com/",
+        "https://www.tiktok.com/",
+        "https://www.linkedin.com/",
         # "https://rednafi.github.io/reflections/limit-concurrency-with-semaphore-in-python-asyncio.html"
     ]
     header = {
         "User-Agent": "Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:64.0) Gecko/20100101 Firefox/64.0",
     }
-    # conn = aiohttp.TCPConnector(limit=50, limit_per_host=8)
     queue_obj = MapQueue()
     config = Config(max_depth=2)
-    semaphore = asyncio.Semaphore(20)
+    semaphore = asyncio.Semaphore(200)
     logger = init_logger()
-    # async with semaphore:
-    async with aiohttp.ClientSession(headers=header) as session:
+    timeout = aiohttp.ClientTimeout(total=10)
+    async with aiohttp.ClientSession(headers=header, timeout=timeout) as session:
         await asyncio.gather(
-            *[TaskRequest(url, session, queue_obj, logger, config=config).parse() for url in links],
+            *[
+                TaskRequest(url, session, queue_obj, logger, config=config, semaphore=semaphore).parse()
+                for url in links
+            ],
         )
         while not queue_obj.queue.empty():
             new_tasks = await queue_obj.get_all_tasks()
