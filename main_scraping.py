@@ -4,7 +4,7 @@ from asyncio.exceptions import TimeoutError
 import logging
 
 import aiohttp
-from aiohttp.client_exceptions import InvalidURL, ClientConnectorError, ServerDisconnectedError
+from aiohttp.client_exceptions import InvalidURL, ClientConnectorError, ServerDisconnectedError, ClientOSError
 from bs4 import BeautifulSoup
 from urllib import parse
 
@@ -50,8 +50,8 @@ class TaskRequest:
         tasks_queue: MapQueue,
         logger: logging.Logger,
         semaphore: asyncio.Semaphore,
-        current_depth=0,
-        base_url=None,
+        current_depth: int = 0,
+        base_url: str | None = None,
         config: Config = Config(),
     ):
         self.url = url
@@ -76,7 +76,7 @@ class TaskRequest:
             try:
                 self.url = await self._normalize_url()
             except ValueError as exc:
-                self.logger.error(exc)
+                self.logger.info(exc)
         else:
             self.base_url = f"{parsed_link_text.scheme}://{parsed_link_text.netloc}"
         try:
@@ -84,12 +84,13 @@ class TaskRequest:
         except (
             InvalidURL,
             ClientConnectorError,
+            ClientOSError,
             UnicodeDecodeError,
             AssertionError,
             ServerDisconnectedError,
             TimeoutError,
         ) as exc:
-            self.logger.error(exc)
+            self.logger.info(exc)
             return
         self.logger.info(f"Links extracted: {len(new_links)} for url: {self.url}")
         if await self._validate_depth():
@@ -139,11 +140,11 @@ class TaskRequest:
 
 async def main():
     links = [
-        # "https://nz.ua/",
+        "https://nz.ua/",
         "https://github.com/",
         "https://www.tiktok.com/",
         "https://www.linkedin.com/",
-        # "https://rednafi.github.io/reflections/limit-concurrency-with-semaphore-in-python-asyncio.html"
+        "https://exame.com/invest/mercados/jovens-periferia-sao-paulo-estrelas-programacao-eua/",
     ]
     header = {
         "User-Agent": "Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:64.0) Gecko/20100101 Firefox/64.0",
