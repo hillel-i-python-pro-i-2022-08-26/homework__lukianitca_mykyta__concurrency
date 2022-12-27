@@ -14,8 +14,6 @@ RUN apt update && apt upgrade -y
 
 COPY --chown=${USER} requirements.txt requirements.txt
 
-RUN python3 -m venv venv
-
 RUN pip install --upgrade pip && \
     pip install --requirement requirements.txt
 
