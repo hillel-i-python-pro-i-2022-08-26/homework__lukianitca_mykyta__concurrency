@@ -17,6 +17,6 @@ homework-i-run:
 
 .PHONY: init-dev
 init-dev:
-	@python3 -m venv venv && \
 	pip install --upgrade pip && \
-	pip install --requirement requirements.txt
+	pip install --requirement requirements.txt && \
+	pre-commit install
