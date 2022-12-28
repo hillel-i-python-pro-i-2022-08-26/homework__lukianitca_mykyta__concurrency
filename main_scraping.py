@@ -17,7 +17,7 @@ async def main():
     }
     queue_obj = MapQueue()
     config = Config(max_depth=2)
-    semaphore = asyncio.Semaphore(200)
+    semaphore = asyncio.Semaphore(20)
     logger = init_logger()
     timeout = aiohttp.ClientTimeout(total=10)
     async with aiohttp.ClientSession(headers=header, timeout=timeout) as session:

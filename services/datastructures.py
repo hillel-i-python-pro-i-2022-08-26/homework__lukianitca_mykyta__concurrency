@@ -15,7 +15,6 @@ class MapQueue:
         self._elems.update(links)
 
     async def get_all_tasks(self):
-        print("STEP IN QUEUE")
         return [await self.queue.get() for _ in range(self.queue.qsize())]
 
     def write_links(self):
