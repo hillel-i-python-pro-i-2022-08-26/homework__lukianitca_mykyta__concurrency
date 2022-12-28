@@ -81,17 +81,8 @@ class TaskRequest:
         else:
             self.base_url = f"{parsed_link_text.scheme}://{parsed_link_text.netloc}"
         try:
-            new_links = await self._extract_links()
-        except (
-            InvalidURL,
-            ClientConnectorError,
-            ClientOSError,
-            UnicodeDecodeError,
-            AssertionError,
-            ServerDisconnectedError,
-            TimeoutError,
-        ) as exc:
-            print(exc)  # logger doesn't print some errors
+            new_links = await self._links_extractor__wrapper()
+        except ValueError:
             return
         self.logger.info(f"Links extracted: {len(new_links)} for url: {self.url}")
         if await self._validate_depth():
@@ -113,6 +104,21 @@ class TaskRequest:
             return
         self.logger.info("Final stage")
         await self.tasks_queue.add_to_set(new_links)
+
+    async def _links_extractor__wrapper(self):
+        try:
+            return await self._extract_links()
+        except (
+            InvalidURL,
+            ClientConnectorError,
+            ClientOSError,
+            UnicodeDecodeError,
+            AssertionError,
+            ServerDisconnectedError,
+            TimeoutError,
+        ) as exc:
+            print(exc)  # logger doesn't print some errors
+            raise ValueError("Error occurred") from exc
 
     async def _normalize_url(self):
         self.logger.info(f"Normalizing url for {self.url}")
@@ -142,10 +148,10 @@ class TaskRequest:
 async def main():
     links = [
         "https://nz.ua/",
-        "https://github.com/",
-        "https://www.tiktok.com/",
-        "https://www.linkedin.com/",
-        "https://exame.com/invest/mercados/jovens-periferia-sao-paulo-estrelas-programacao-eua/",
+        # "https://github.com/",
+        # "https://www.tiktok.com/",
+        # "https://www.linkedin.com/",
+        # "https://exame.com/invest/mercados/jovens-periferia-sao-paulo-estrelas-programacao-eua/",
     ]
     header = {
         "User-Agent": "Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:64.0) Gecko/20100101 Firefox/64.0",
