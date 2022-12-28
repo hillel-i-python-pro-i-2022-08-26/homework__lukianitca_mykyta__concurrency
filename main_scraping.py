@@ -45,8 +45,8 @@ def init_logger():
 class TaskRequest:
     def __init__(
         self,
-        url,
-        session,
+        url: str,
+        session: aiohttp.ClientSession,
         tasks_queue: MapQueue,
         logger: logging.Logger,
         semaphore: asyncio.Semaphore,
@@ -58,12 +58,12 @@ class TaskRequest:
         self.session = session
         self.tasks_queue = tasks_queue
         self.semaphore = semaphore
-        self.base_url = self.set_base_link(base_url)
+        self.base_url = self._set_base_link(base_url)
         self.current_depth = current_depth
         self.config = config
         self.logger = logger
 
-    def set_base_link(self, new_link):
+    def _set_base_link(self, new_link):
         if not new_link:
             parsed_new_link = parse.urlparse(self.url)
             return parse.urljoin(parsed_new_link.scheme, parsed_new_link.netloc)
@@ -77,6 +77,7 @@ class TaskRequest:
                 self.url = await self._normalize_url()
             except ValueError as exc:
                 self.logger.info(exc)
+                return
         else:
             self.base_url = f"{parsed_link_text.scheme}://{parsed_link_text.netloc}"
         try:
@@ -90,27 +91,27 @@ class TaskRequest:
             ServerDisconnectedError,
             TimeoutError,
         ) as exc:
-            self.logger.info(exc)
+            print(exc)  # logger doesn't print some errors
             return
         self.logger.info(f"Links extracted: {len(new_links)} for url: {self.url}")
         if await self._validate_depth():
+            base_task_args = {
+                "url": None,
+                "session": self.session,
+                "tasks_queue": self.tasks_queue,
+                "logger": self.logger,
+                "semaphore": self.semaphore,
+                "config": self.config,
+                "current_depth": self.current_depth + 1,
+                "base_url": self.base_url,
+            }
             for link in new_links:
                 if link:
-                    await self.tasks_queue.add_unique(
-                        TaskRequest(
-                            link,
-                            self.session,
-                            self.tasks_queue,
-                            self.logger,
-                            self.semaphore,
-                            config=self.config,
-                            current_depth=self.current_depth + 1,
-                            base_url=self.base_url,
-                        )
-                    )
+                    base_task_args["url"] = link
+                    await self.tasks_queue.add_unique(TaskRequest(**base_task_args))
             self.logger.info(f"[ END ] Tasks added for link {self.url}")
             return
-        print("Final stage")
+        self.logger.info("Final stage")
         await self.tasks_queue.add_to_set(new_links)
 
     async def _normalize_url(self):
