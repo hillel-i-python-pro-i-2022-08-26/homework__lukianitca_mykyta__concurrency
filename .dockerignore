@@ -1,0 +1,7 @@
+**
+
+!services
+!main_scraping.py
+!docker-compose.yml
+!Dockerfile
+!requirements.txt

@@ -130,3 +130,7 @@ dmypy.json
 
 
 .idea/
+
+links_storage/
+!links_storage/.gitkeep
+test.py
