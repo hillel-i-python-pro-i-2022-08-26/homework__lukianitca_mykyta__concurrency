@@ -17,6 +17,7 @@ COPY --chown=${USER} requirements.txt requirements.txt
 RUN pip install --upgrade pip && \
     pip install --requirement requirements.txt
 
+COPY --chown=${USER} ./services services
 COPY --chown=${USER} ./main_scraping.py main.py
 
 USER ${USER}
